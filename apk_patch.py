@@ -1,9 +1,10 @@
 
 import xml.etree.ElementTree as ET
-from shutil import copyfile
+import shutil
 import argparse
 import tempfile
 import os
+import subprocess
 
 ANDROIDMANIFEST_FILENAME = "./AndroidManifest.xml"
 CA_FILENAME = os.getenv('HOME') + '/usr-android/etc/cacert.der'
@@ -19,9 +20,10 @@ NETWORK_SECURITY_CONTENT = ('<?xml version="1.0" encoding="utf-8"?>\n'
                             '</network-security-config>\n'
                             )
 
+args = None
+
 def is_tool(name):
     """Check whether `name` is on PATH and marked as executable."""
-
     # from whichcraft import which
     from shutil import which
     which(name)
@@ -29,7 +31,6 @@ def is_tool(name):
 
 def run_cmd(cmd, verbose=None):
     """Run command."""
-    import subprocess
     if args.verbose:
         print("Running: ", end='') 
         print(" ".join(str(x) for x in cmd)) 
@@ -40,14 +41,13 @@ def run_cmd(cmd, verbose=None):
 def init():
     """init args and check dependencies."""
     global args
-
     parser = argparse.ArgumentParser(
         description="Tool to add custom CA Authority into an APK. For more info see https://developer.android.com/training/articles/security-config")
 
     optional = parser._action_groups.pop()
     required = parser.add_argument_group('required arguments')
     required.add_argument("-c", "--cert", nargs="?", required=True, 
-                        help="CA certificate file")
+                        help="CA certificate file (DER format)")
 
     optional.add_argument("-i", "--input", nargs="?",
                         help="APK file, extracted folder or AndroidManifest.xml (Default current directory)", type=str, default=".")
@@ -95,7 +95,7 @@ def run():
         run_cmd(cmd, verbose = args.verbose)
         androidmanifest_filename = args.output_dir + "/" + ANDROIDMANIFEST_FILENAME
 
-    copyfile(androidmanifest_filename, androidmanifest_filename + '-backup')
+    shutil.copyfile(androidmanifest_filename, androidmanifest_filename + '-backup')
     patch_androidmanifest(androidmanifest_filename, args.cert)
 
     if args.output_file:
@@ -104,10 +104,13 @@ def run():
         cmd = ['apktool', 'build', args.output_dir, '-o', tmp_file]
         run_cmd(cmd, verbose = args.verbose)
 
+        # remove tmp dir
+        if args.clean_output_dir and os.path.isdir(args.output_dir):
+            shutil.rmtree(args.output_dir)
+
         # zipalign
         cmd = ['zipalign', '-v', '-f', '-p', '4', tmp_file, args.output_file]
         run_cmd(cmd, verbose = args.verbose)
-
         os.unlink(tmp_file)
 
         # apksign
@@ -116,7 +119,7 @@ def run():
             cmd = 'keytool -genkey -v -keystore debug.keystore -storepass debug00 -keypass debug00 -alias signkey -dname CN=Debug_CA -keyalg RSA -keysize 2048 -validity 20000'.split(sep=None)
             run_cmd(cmd, verbose = args.verbose)
             delete_keystore = True
-        cmd = ('apksigner sign --ks debug.keystore --ks-key-alias signkey --ks-pass pass:debug00 --key-pass pass:debug00 ' + args.output_file).split(sep=None)
+        cmd = ['apksigner', 'sign', '--ks', 'debug.keystore', '--ks-key-alias', 'signkey', '--ks-pass', 'pass:debug00', '--key-pass', 'pass:debug00', args.output_file ]
         run_cmd(cmd, verbose = args.verbose)
         if delete_keystore:
             os.unlink('debug.keystore')
@@ -140,13 +143,14 @@ def patch_androidmanifest(androidmanifest_filename, ca_filename):
     tree = ET.parse(androidmanifest_filename)
     root = tree.getroot()
     # get package name
-    packagename = root.attrib["package"]
+    # packagename = root.attrib["package"]
+    # print(packagename)
     # get application node
     application = root.find("application")
     # modify it
     application.set('android:networkSecurityConfig',
                     '@xml/network_security_config')
-    # print(packagename)
+    
     # save
     xml_string = ET.tostring(root, encoding='utf8', method='xml').decode()
     # tree.write("output.xml")
@@ -160,11 +164,12 @@ def patch_androidmanifest(androidmanifest_filename, ca_filename):
 
     # create res/raw/cacert
     os.makedirs(folder + '/res/raw', exist_ok=True)
-    copyfile(ca_filename, folder + '/res/raw/cacert')
+    shutil.copyfile(ca_filename, folder + '/res/raw/cacert')
 
 
 def __main__():
     """main."""
+    global args
     init()
     run()
 
