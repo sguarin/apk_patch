@@ -152,9 +152,9 @@ def patch_androidmanifest(androidmanifest_filename, ca_filename):
                     '@xml/network_security_config')
     
     # save
-    xml_string = ET.tostring(root, encoding='utf8', method='xml').decode()
+    xml_string = ET.tostring(root, encoding='utf-8', method='xml').decode()
     # tree.write("output.xml")
-    with open(ANDROIDMANIFEST_FILENAME, 'w+') as file:
+    with open(androidmanifest_filename, 'w+') as file:
         file.write(xml_string)
 
     # create res/xml/network_security.xml
