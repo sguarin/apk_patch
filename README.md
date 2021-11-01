@@ -1,2 +1,2 @@
 # apk_patch
-Tool to patch an apk file for pentesting purposes
+Tool to add custom CA Authority into an APK. For more info see https://developer.android.com/training/articles/security-config
